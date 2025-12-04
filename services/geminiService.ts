@@ -1,5 +1,5 @@
 import { GoogleGenAI, Chat, Content, Modality } from "@google/genai";
-import { Message, Role, Attachment } from "../types";
+import { Message, Role } from "../types";
 
 // Initialize the client strictly as per guidelines
 // Ensure process.env.API_KEY is available in your environment
@@ -7,7 +7,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const MODEL_NAME = 'gemini-2.5-flash';
 
-const SYSTEM_INSTRUCTION = `
+const BASE_SYSTEM_INSTRUCTION = `
 You are Shakil, a highly intelligent, witty, and multilingual AI assistant.
 Your persona is inspired by a hero: helpful, confident, moral, and sometimes you use light-hearted heroic metaphors.
 You must answer questions accurately and concisely.
@@ -19,20 +19,22 @@ If asked about your identity, confirm you are Shakil, the AI assistant of this a
  * Creates a new chat instance, potentially restoring history.
  * We need to map our app's Message format to the SDK's Content format.
  */
-export const createGenAIChat = (historyMessages: Message[] = []): Chat => {
+export const createGenAIChat = (historyMessages: Message[] = [], userMemory: string = ''): Chat => {
   // Convert internal message history to Gemini SDK history format
-  // We filter out messages with attachments for the text model history to avoid complexity 
-  // with multimodal history in the text-focused chat model unless needed.
-  // For basic text chat, we just keep the text.
   const history: Content[] = historyMessages.map((msg) => ({
     role: msg.role === Role.USER ? 'user' : 'model',
     parts: [{ text: msg.text }],
   }));
 
+  // Inject memory into system instruction if it exists
+  const systemInstruction = userMemory 
+    ? `${BASE_SYSTEM_INSTRUCTION}\n\nUser Context (Long-term Memory):\n${userMemory}`
+    : BASE_SYSTEM_INSTRUCTION;
+
   return ai.chats.create({
     model: MODEL_NAME,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
+      systemInstruction: systemInstruction,
     },
     history: history,
   });
@@ -68,57 +70,6 @@ export const sendMessageStream = async (
 };
 
 /**
- * Sends a request to edit or generate an image using gemini-2.5-flash-image (Nano Banana).
- */
-export const sendImageEditMessage = async (
-    text: string,
-    base64Image: string,
-    mimeType: string
-): Promise<{ text: string; attachment?: Attachment }> => {
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: {
-                parts: [
-                    {
-                        inlineData: {
-                            data: base64Image,
-                            mimeType: mimeType,
-                        },
-                    },
-                    { text: text },
-                ],
-            },
-            // config: { imageConfig: { ... } } // Add specific image config if needed (e.g., aspectRatio)
-        });
-
-        let responseText = '';
-        let responseImage: Attachment | undefined;
-
-        // Iterate through parts to find text and image
-        if (response.candidates?.[0]?.content?.parts) {
-            for (const part of response.candidates[0].content.parts) {
-                if (part.text) {
-                    responseText += part.text;
-                }
-                if (part.inlineData) {
-                    responseImage = {
-                        type: 'image',
-                        data: part.inlineData.data,
-                        mimeType: part.inlineData.mimeType,
-                    };
-                }
-            }
-        }
-
-        return { text: responseText, attachment: responseImage };
-    } catch (error) {
-        console.error("Error sending image edit request:", error);
-        throw error;
-    }
-};
-
-/**
  * Helper to generate a session title based on the first message
  */
 export const generateSessionTitle = async (firstMessage: string): Promise<string> => {
@@ -132,6 +83,42 @@ export const generateSessionTitle = async (firstMessage: string): Promise<string
         return "New Conversation";
     }
 }
+
+/**
+ * Refines the user's long-term memory based on the latest interaction.
+ */
+export const refineUserMemory = async (currentMemory: string, userMessage: string, aiResponse: string): Promise<string> => {
+    try {
+        const prompt = `
+        You are a Memory Manager for an AI assistant.
+        
+        Current User Memory:
+        "${currentMemory || "No memory yet."}"
+        
+        Latest Interaction:
+        User: "${userMessage}"
+        AI: "${aiResponse}"
+        
+        Task:
+        Update the Current User Memory with any new, permanent personal facts found in the Latest Interaction (e.g., name, hobbies, profession, location, preferences).
+        - If the user explicitly states their name, override any old name.
+        - Keep the memory concise and bullet-pointed.
+        - Do not store temporary conversation details (like "user asked for a joke").
+        - If no new personal info is found, return the "Current User Memory" exactly as is.
+        - Do not output anything else besides the updated memory text.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+
+        return response.text?.trim() || currentMemory;
+    } catch (e) {
+        console.error("Failed to refine memory", e);
+        return currentMemory;
+    }
+};
 
 // --- Text to Speech (TTS) Functionality ---
 

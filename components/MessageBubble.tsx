@@ -122,17 +122,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
             </div>
           )}
 
-          {/* Image Attachment */}
-          {message.attachment && (
-            <div className="mb-3 rounded-lg overflow-hidden border border-black/10">
-                <img 
-                    src={`data:${message.attachment.mimeType};base64,${message.attachment.data}`} 
-                    alt="Attached content" 
-                    className="w-full h-auto max-h-80 object-cover"
-                />
-            </div>
-          )}
-
           <div className={`prose ${isUser ? 'prose-invert' : 'prose-slate'} max-w-none leading-relaxed break-words`}>
             {isUser ? (
               <p className="whitespace-pre-wrap">{message.text}</p>

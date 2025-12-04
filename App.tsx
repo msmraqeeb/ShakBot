@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Send, Menu, Loader2, Sparkles, Mic, Image as ImageIcon, X } from 'lucide-react';
-import { ChatSession, Message, Role, User, Attachment } from './types';
+import { Send, Menu, Loader2, Sparkles, Mic } from 'lucide-react';
+import { ChatSession, Message, Role, User } from './types';
 import { Sidebar } from './components/Sidebar';
 import { MessageBubble } from './components/MessageBubble';
 import { LoginScreen } from './components/LoginScreen';
-import { createGenAIChat, sendMessageStream, generateSessionTitle, sendImageEditMessage } from './services/geminiService';
+import { createGenAIChat, sendMessageStream, generateSessionTitle, refineUserMemory } from './services/geminiService';
 import { logout } from './services/authService';
 
 // Updated with the user provided Unsplash URL
@@ -23,14 +23,13 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<Attachment | null>(null);
+  const [userMemory, setUserMemory] = useState<string>('');
   
   // Refs for scrolling and chat persistence
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInstanceRef = useRef<any>(null); // To store the GoogleGenAI Chat object
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Helpers ---
 
@@ -39,7 +38,13 @@ const App: React.FC = () => {
     const storedUser = localStorage.getItem('shakbot_user');
     if (storedUser) {
       try {
-        setUser(JSON.parse(storedUser));
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+        // Load memory for this user
+        const storedMemory = localStorage.getItem(`shakbot_memory_${parsedUser.id}`);
+        if (storedMemory) {
+            setUserMemory(storedMemory);
+        }
       } catch (e) {
         console.error("Failed to parse user from local storage");
       }
@@ -56,7 +61,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [sessions, currentSessionId, isLoading, selectedImage]);
+  }, [sessions, currentSessionId, isLoading]);
 
   // Adjust textarea height automatically
   useEffect(() => {
@@ -84,43 +89,19 @@ const App: React.FC = () => {
   const handleLoginSuccess = (loggedInUser: User) => {
     setUser(loggedInUser);
     localStorage.setItem('shakbot_user', JSON.stringify(loggedInUser));
+    
+    // Load memory for new user
+    const storedMemory = localStorage.getItem(`shakbot_memory_${loggedInUser.id}`);
+    setUserMemory(storedMemory || '');
   };
 
   const handleLogout = async () => {
     await logout();
     setUser(null);
+    setUserMemory('');
     localStorage.removeItem('shakbot_user');
     setSessions([]); // Clear sessions on logout for security
     setCurrentSessionId(null);
-  };
-
-  // --- Image Upload Logic ---
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-              const base64String = reader.result as string;
-              // Extract pure base64 and mime type
-              const matches = base64String.match(/^data:(.+);base64,(.+)$/);
-              if (matches) {
-                  setSelectedImage({
-                      type: 'image',
-                      mimeType: matches[1],
-                      data: matches[2]
-                  });
-              }
-          };
-          reader.readAsDataURL(file);
-      }
-      // Reset input so same file can be selected again if needed
-      if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-      }
-  };
-
-  const clearImage = () => {
-      setSelectedImage(null);
   };
 
   // --- Voice Input Logic ---
@@ -195,11 +176,12 @@ const App: React.FC = () => {
     };
     setSessions(prev => [...prev, newSession]);
     setCurrentSessionId(newSession.id);
-    chatInstanceRef.current = createGenAIChat([]); // Fresh Gemini Chat instance
+    // Pass userMemory to the chat instance
+    chatInstanceRef.current = createGenAIChat([], userMemory); 
     setIsSidebarOpen(false);
-  }, []);
+  }, [userMemory]);
 
-  // Restore Chat Instance when switching sessions
+  // Restore Chat Instance when switching sessions or when memory changes
   useEffect(() => {
     if (!user) return; // Don't manage sessions if not logged in
 
@@ -214,13 +196,13 @@ const App: React.FC = () => {
 
     const session = sessions.find(s => s.id === currentSessionId);
     if (session) {
-      // Re-create the Gemini Chat object with the history of the selected session
-      chatInstanceRef.current = createGenAIChat(session.messages);
+      // Re-create the Gemini Chat object with the history and current memory
+      chatInstanceRef.current = createGenAIChat(session.messages, userMemory);
     }
-  }, [currentSessionId, createNewSession, sessions.length, user]);
+  }, [currentSessionId, createNewSession, sessions.length, user, userMemory]);
 
   const handleSendMessage = async () => {
-    if ((!input.trim() && !selectedImage) || !currentSessionId || isLoading) return;
+    if (!input.trim() || !currentSessionId || isLoading) return;
 
     // Stop listening if sending message
     if (isListening && recognitionRef.current) {
@@ -229,19 +211,14 @@ const App: React.FC = () => {
     }
 
     const userText = input.trim();
-    const attachedImage = selectedImage;
-    
-    // Clear inputs
     setInput('');
-    setSelectedImage(null);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     const userMessage: Message = {
       id: uuidv4(),
       role: Role.USER,
-      text: userText || (attachedImage ? "Image uploaded" : ""),
-      timestamp: Date.now(),
-      attachment: attachedImage || undefined
+      text: userText,
+      timestamp: Date.now()
     };
 
     // Update UI immediately
@@ -258,73 +235,61 @@ const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      if (attachedImage) {
-          // --- Multimodal Request (Nano Banana / Gemini 2.5 Flash Image) ---
-          
-          const result = await sendImageEditMessage(userText, attachedImage.data, attachedImage.mimeType);
-
-          const botMessage: Message = {
-              id: uuidv4(),
-              role: Role.MODEL,
-              text: result.text || (result.attachment ? "Here is the result." : "I processed the image."),
-              timestamp: Date.now(),
-              attachment: result.attachment
-          };
-
-          setSessions(prev => prev.map(session => {
-            if (session.id === currentSessionId) {
-              return { ...session, messages: [...session.messages, botMessage] };
-            }
-            return session;
-          }));
-
-      } else {
-          // --- Standard Text Chat Request ---
-          
-          // Ensure chat instance exists
-          if (!chatInstanceRef.current) {
-            chatInstanceRef.current = createGenAIChat(getCurrentSession()?.messages || []);
-          }
-
-          // Placeholder for bot message
-          const botMessageId = uuidv4();
-          const botMessagePlaceholder: Message = {
-            id: botMessageId,
-            role: Role.MODEL,
-            text: '',
-            timestamp: Date.now()
-          };
-
-          setSessions(prev => prev.map(session => {
-            if (session.id === currentSessionId) {
-              return { ...session, messages: [...session.messages, botMessagePlaceholder] };
-            }
-            return session;
-          }));
-
-          // Stream response
-          let accumulatedText = '';
-          const stream = await sendMessageStream(chatInstanceRef.current, userText);
-
-          for await (const chunk of stream) {
-            accumulatedText += chunk;
-            
-            setSessions(prev => prev.map(session => {
-              if (session.id === currentSessionId) {
-                const updatedMessages = session.messages.map(msg => 
-                  msg.id === botMessageId ? { ...msg, text: accumulatedText } : msg
-                );
-                return { ...session, messages: updatedMessages };
-              }
-              return session;
-            }));
-          }
+      // Ensure chat instance exists
+      if (!chatInstanceRef.current) {
+        chatInstanceRef.current = createGenAIChat(getCurrentSession()?.messages || [], userMemory);
       }
 
-      // Generate Title if this was the first turn
+      // Placeholder for bot message
+      const botMessageId = uuidv4();
+      const botMessagePlaceholder: Message = {
+        id: botMessageId,
+        role: Role.MODEL,
+        text: '',
+        timestamp: Date.now()
+      };
+
+      setSessions(prev => prev.map(session => {
+        if (session.id === currentSessionId) {
+          return { ...session, messages: [...session.messages, botMessagePlaceholder] };
+        }
+        return session;
+      }));
+
+      // Stream response
+      let accumulatedText = '';
+      const stream = await sendMessageStream(chatInstanceRef.current, userText);
+
+      for await (const chunk of stream) {
+        accumulatedText += chunk;
+        
+        setSessions(prev => prev.map(session => {
+          if (session.id === currentSessionId) {
+            const updatedMessages = session.messages.map(msg => 
+              msg.id === botMessageId ? { ...msg, text: accumulatedText } : msg
+            );
+            return { ...session, messages: updatedMessages };
+          }
+          return session;
+        }));
+      }
+
+      // After a successful response, try to refine the memory in the background
+      // We don't await this to keep UI responsive
+      if (user) {
+          refineUserMemory(userMemory, userText, accumulatedText).then(newMemory => {
+              if (newMemory !== userMemory) {
+                  setUserMemory(newMemory);
+                  localStorage.setItem(`shakbot_memory_${user.id}`, newMemory);
+                  console.log("Memory updated:", newMemory);
+              }
+          });
+      }
+
+      // After first turn, generate a better title if it's the first message
       const currentSession = getCurrentSession();
-      if (currentSession && currentSession.messages.length <= 1) { 
-         generateSessionTitle(userText || "Image Edit").then(title => {
+      if (currentSession && currentSession.messages.length <= 1) { // 1 because we just added User message
+         generateSessionTitle(userText).then(title => {
              setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, title } : s));
          });
       }
@@ -418,10 +383,10 @@ const App: React.FC = () => {
                       <img src={SHAKIL_AVATAR_URL} alt="Shakil" className="w-full h-full object-cover" />
                   </div>
                   <h2 className="text-3xl font-bold text-blue-900 mb-2">Hello, {user.name.split(' ')[0]}!</h2>
-                  <p className="text-lg text-slate-600 max-w-md leading-relaxed mb-6">
-                    I'm Shakil, your multilingual AI assistant. Ask me anything, or upload an image to edit it with my Nano Banana powers!
+                  <p className="text-lg text-slate-600 max-w-md leading-relaxed">
+                    I'm Shakil, your multilingual AI assistant. Ask me anything, in any language. I'm ready to help you save the day!
                   </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-lg">
+                  <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-lg">
                       {["Write a story about a kryptonite planet", "Translate 'Hope' into 5 languages", "How do I bake a cake?", "Debug this React code"].map((suggestion, idx) => (
                           <button 
                             key={idx}
@@ -458,97 +423,46 @@ const App: React.FC = () => {
 
         {/* Input Area */}
         <div className="p-4 bg-white/80 backdrop-blur-md border-t border-slate-200">
-            <div className={`max-w-3xl mx-auto flex flex-col gap-2`}>
+            <div className={`
+              max-w-3xl mx-auto relative flex items-end gap-2 bg-slate-100 p-2 rounded-3xl border transition-all shadow-sm
+              ${isListening ? 'border-red-400 ring-2 ring-red-100' : 'border-slate-300 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100'}
+            `}>
+                <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={isListening ? "Listening..." : "Ask Shakil anything..."}
+                    className="flex-1 bg-transparent border-none focus:ring-0 text-slate-800 placeholder-slate-400 resize-none py-3 px-2 max-h-32 min-h-[44px]"
+                    rows={1}
+                />
                 
-                {/* Image Preview */}
-                {selectedImage && (
-                    <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-lg w-fit border border-slate-200 animate-in fade-in slide-in-from-bottom-2">
-                        <div className="h-16 w-16 rounded-md overflow-hidden bg-slate-200">
-                            <img 
-                                src={`data:${selectedImage.mimeType};base64,${selectedImage.data}`} 
-                                alt="Preview" 
-                                className="w-full h-full object-cover"
-                            />
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-xs font-semibold text-slate-600">Image attached</span>
-                            <span className="text-[10px] text-slate-400">Ready to edit/analyze</span>
-                        </div>
-                        <button 
-                            onClick={clearImage}
-                            className="p-1 hover:bg-slate-200 rounded-full text-slate-500 transition-colors ml-2"
-                        >
-                            <X size={16} />
-                        </button>
-                    </div>
-                )}
+                {/* Microphone Button */}
+                <button
+                    onClick={toggleListening}
+                    className={`
+                        p-3 rounded-full flex items-center justify-center transition-all duration-300
+                        ${isListening 
+                            ? 'bg-red-600 text-yellow-300 shadow-[0_0_15px_rgba(220,38,38,0.6)] scale-110' 
+                            : 'text-slate-500 hover:bg-slate-200 hover:text-slate-700'}
+                    `}
+                    title={isListening ? "Stop listening" : "Start voice input"}
+                >
+                    <Mic size={20} className={isListening ? "animate-pulse" : ""} />
+                </button>
 
-                <div className={`
-                flex items-end gap-2 bg-slate-100 p-2 rounded-3xl border transition-all shadow-sm
-                ${isListening ? 'border-red-400 ring-2 ring-red-100' : 'border-slate-300 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100'}
-                `}>
-                    
-                    {/* File Input (Hidden) */}
-                    <input 
-                        type="file" 
-                        ref={fileInputRef}
-                        className="hidden" 
-                        accept="image/*"
-                        onChange={handleFileSelect}
-                    />
-
-                    {/* Image Upload Button */}
-                    <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className={`
-                            p-3 rounded-full flex items-center justify-center transition-all duration-300
-                            ${selectedImage 
-                                ? 'bg-blue-100 text-blue-600' 
-                                : 'text-slate-500 hover:bg-slate-200 hover:text-slate-700'}
-                        `}
-                        title="Upload image"
-                        disabled={isListening}
-                    >
-                        <ImageIcon size={20} />
-                    </button>
-
-                    <textarea
-                        ref={textareaRef}
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder={isListening ? "Listening..." : "Ask Shakil anything..."}
-                        className="flex-1 bg-transparent border-none focus:ring-0 text-slate-800 placeholder-slate-400 resize-none py-3 px-2 max-h-32 min-h-[44px]"
-                        rows={1}
-                    />
-                    
-                    {/* Microphone Button */}
-                    <button
-                        onClick={toggleListening}
-                        className={`
-                            p-3 rounded-full flex items-center justify-center transition-all duration-300
-                            ${isListening 
-                                ? 'bg-red-600 text-yellow-300 shadow-[0_0_15px_rgba(220,38,38,0.6)] scale-110' 
-                                : 'text-slate-500 hover:bg-slate-200 hover:text-slate-700'}
-                        `}
-                        title={isListening ? "Stop listening" : "Start voice input"}
-                    >
-                        <Mic size={20} className={isListening ? "animate-pulse" : ""} />
-                    </button>
-
-                    <button
-                        onClick={handleSendMessage}
-                        disabled={(!input.trim() && !selectedImage) || isLoading}
-                        className={`
-                            p-3 rounded-full flex items-center justify-center transition-all duration-200
-                            ${(!input.trim() && !selectedImage) || isLoading 
-                                ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
-                                : 'bg-red-600 hover:bg-red-700 text-yellow-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0'}
-                        `}
-                    >
-                        {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} fill="currentColor" />}
-                    </button>
-                </div>
+                <button
+                    onClick={handleSendMessage}
+                    disabled={!input.trim() || isLoading}
+                    className={`
+                        p-3 rounded-full flex items-center justify-center transition-all duration-200
+                        ${!input.trim() || isLoading 
+                            ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
+                            : 'bg-red-600 hover:bg-red-700 text-yellow-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0'}
+                    `}
+                >
+                    {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} fill="currentColor" />}
+                </button>
             </div>
             <div className="text-center mt-2">
                  <p className="text-[10px] text-slate-400">Shakil can make mistakes. Verify important information.</p>

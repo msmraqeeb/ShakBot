@@ -10,19 +10,12 @@ export interface User {
   photoUrl?: string;
 }
 
-export interface Attachment {
-  type: 'image';
-  data: string; // Base64 string
-  mimeType: string;
-}
-
 export interface Message {
   id: string;
   role: Role;
   text: string;
   timestamp: number;
   isError?: boolean;
-  attachment?: Attachment;
 }
 
 export interface ChatSession {

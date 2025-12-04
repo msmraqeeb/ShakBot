@@ -1,34 +1,56 @@
 import { User } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 
-// TODO: Replace this with your actual Google Cloud Client ID
-// You can get one at https://console.cloud.google.com/apis/credentials
-export const GOOGLE_CLIENT_ID = "324710071500-p770dnh0uvbdlm0lh7jaghrguc8nopud.apps.googleusercontent.com";
+const USERS_STORAGE_KEY = 'shakbot_users';
 
-/**
- * Decodes a JWT token to extract user information.
- * @param token The JWT token string (Credential)
- */
-export const parseJwt = (token: string): any => {
-    try {
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        }).join(''));
+// Helper to get all registered users from local storage
+const getUsers = (): any[] => {
+  const usersJson = localStorage.getItem(USERS_STORAGE_KEY);
+  return usersJson ? JSON.parse(usersJson) : [];
+};
 
-        return JSON.parse(jsonPayload);
-    } catch (e) {
-        console.error("Failed to parse JWT", e);
-        return null;
-    }
+export const login = async (email: string, password: string): Promise<User> => {
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 800));
+
+  const users = getUsers();
+  const user = users.find((u: any) => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+
+  if (user) {
+    // Return user without password
+    const { password, ...userWithoutPassword } = user;
+    return userWithoutPassword as User;
+  }
+
+  throw new Error('Invalid email or password');
+};
+
+export const register = async (email: string, password: string, name: string): Promise<User> => {
+  await new Promise(resolve => setTimeout(resolve, 800));
+
+  const users = getUsers();
+  
+  if (users.find((u: any) => u.email.toLowerCase() === email.toLowerCase())) {
+    throw new Error('User already exists with this email');
+  }
+
+  const newUser = {
+    id: uuidv4(),
+    email,
+    password, // In a real app, never store passwords in plain text!
+    name,
+    photoUrl: undefined // Local users might not have a photo initially
+  };
+
+  users.push(newUser);
+  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+
+  const { password: _, ...userWithoutPassword } = newUser;
+  return userWithoutPassword as User;
 };
 
 export const logout = async (): Promise<void> => {
-    // Revoke Google token if needed, usually we just clear local state
-    if ((window as any).google) {
-        (window as any).google.accounts.id.disableAutoSelect();
-    }
     return new Promise((resolve) => {
-        setTimeout(resolve, 500);
+        setTimeout(resolve, 300);
     });
 };
