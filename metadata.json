@@ -1,0 +1,7 @@
+{
+  "name": "ShakBot",
+  "description": "A multilingual AI conversational assistant powered by Shakil, featuring a heroic interface and intelligent responses.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
