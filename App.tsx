@@ -457,26 +457,30 @@ const App: React.FC = () => {
         };
         await dbService.saveMessage(sessionId, finalBotMessage);
 
-        // Refine memory
+        // Refine memory (delayed to avoid rate limits)
         if (user) {
-            refineUserMemory(userMemory, userText, accumulatedText).then(async newMemory => {
-                if (newMemory !== userMemory) {
-                    console.log("Memory updated");
-                    setUserMemory(newMemory);
-                    await dbService.saveUserMemory(user.id, newMemory);
-                }
-            });
+            setTimeout(() => {
+                refineUserMemory(userMemory, userText, accumulatedText).then(async newMemory => {
+                    if (newMemory !== userMemory) {
+                        console.log("Memory updated");
+                        setUserMemory(newMemory);
+                        await dbService.saveUserMemory(user.id, newMemory);
+                    }
+                });
+            }, 6000); // 6s delay
         }
       }
 
-      // Generate title if needed
+      // Generate title if needed (delayed to avoid rate limits)
       setSessions(prev => {
           const s = prev.find(s => s.id === sessionId);
           if (s && s.messages.length === 2) {
-              generateSessionTitle(userText).then(async title => {
-                  setSessions(curr => curr.map(x => x.id === sessionId ? { ...x, title } : x));
-                  await dbService.updateSessionTitle(sessionId, title);
-              });
+              setTimeout(() => {
+                generateSessionTitle(userText).then(async title => {
+                    setSessions(curr => curr.map(x => x.id === sessionId ? { ...x, title } : x));
+                    await dbService.updateSessionTitle(sessionId, title);
+                });
+              }, 3000); // 3s delay
           }
           return prev;
       });
@@ -505,7 +509,7 @@ const App: React.FC = () => {
       const errorCode = error?.error?.code || error?.status || error?.code;
       const errorStatus = error?.error?.status || error?.statusText;
 
-      if (errorMessageString.includes('429') || errorCode === 429 || errorStatus === 'RESOURCE_EXHAUSTED') {
+      if (errorMessageString.includes('429') || errorCode === 429 || errorStatus === 'RESOURCE_EXHAUSTED' || errorMessageString.includes('Quota')) {
         errorText = "⚠️ **Rate Limit Exceeded**: My energy is temporarily depleted (Error 429). I am automatically retrying... if this persists, please wait 30 seconds.";
       }
 

@@ -31,7 +31,7 @@ If asked about your identity, confirm you are Shakil, the AI assistant of this a
 // --- Retry Helper ---
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function retryWithBackoff<T>(fn: () => Promise<T>, retries = 3, initialDelay = 1000): Promise<T> {
+async function retryWithBackoff<T>(fn: () => Promise<T>, retries = 6, initialDelay = 1000): Promise<T> {
   let currentDelay = initialDelay;
   for (let i = 0; i < retries; i++) {
     try {
@@ -40,17 +40,28 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, retries = 3, initialDel
       // Robust check for Quota/Rate Limit errors
       // API might return different structures (status 429, code 429, or RESOURCE_EXHAUSTED inside message)
       const errorStr = JSON.stringify(error || {});
+      const errorMsg = error?.message || '';
+      
       const isQuotaError = 
         error?.status === 429 || 
         error?.code === 429 || 
         error?.error?.code === 429 ||
         errorStr.includes('RESOURCE_EXHAUSTED') ||
-        errorStr.includes('429');
+        errorStr.includes('429') ||
+        errorMsg.includes('429') ||
+        errorMsg.includes('Quota');
 
-      if (isQuotaError && i < retries - 1) {
-        console.warn(`Quota exceeded (429). Retrying in ${currentDelay}ms... (Attempt ${i + 1}/${retries})`);
+      // Also retry on 503 (Service Unavailable) or 500 (Internal Server Error) as they are often transient
+      const isServerTransientError = 
+        error?.status === 503 || 
+        error?.status === 500 ||
+        error?.code === 503 ||
+        error?.code === 500;
+
+      if ((isQuotaError || isServerTransientError) && i < retries - 1) {
+        console.warn(`API Error (${isQuotaError ? '429 Quota' : '5xx Server'}). Retrying in ${currentDelay}ms... (Attempt ${i + 1}/${retries})`);
         await delay(currentDelay);
-        currentDelay *= 2; // Exponential backoff: 1s, 2s, 4s
+        currentDelay *= 2; // Exponential backoff: 1s, 2s, 4s, 8s, 16s
       } else {
         // If it's not a quota error or we ran out of retries, throw it
         throw error;
