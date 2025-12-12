@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Send, Menu, Loader2, Sparkles, Mic, X, ImagePlus, Palette, Zap, Brain, MicOff } from 'lucide-react';
+import { Send, Menu, Loader2, Sparkles, Mic, X, ImagePlus, Palette, Zap, Brain, MicOff, Check, ChevronRight } from 'lucide-react';
 import { ChatSession, Message, Role, User } from './types';
 import { Sidebar } from './components/Sidebar';
 import { MessageBubble } from './components/MessageBubble';
@@ -42,6 +42,9 @@ const App: React.FC = () => {
   // Model Selection State
   const [currentModel, setCurrentModel] = useState<'gemini-2.5-flash' | 'gemini-3-pro-preview'>('gemini-2.5-flash');
   
+  // Permission Modal State
+  const [showPermissionRequest, setShowPermissionRequest] = useState(false);
+
   // Refs for scrolling and chat persistence
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInstanceRef = useRef<any>(null); // To store the GoogleGenAI Chat object
@@ -56,20 +59,37 @@ const App: React.FC = () => {
 
   // --- Helpers ---
 
-  // Request Microphone Permission on Mount
+  // Check Permission Status on Mount
   useEffect(() => {
-    const requestMicPermission = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            // We just need the permission, so stop the stream immediately to save battery/privacy
-            stream.getTracks().forEach(track => track.stop());
-            console.log("Microphone permission granted.");
-        } catch (err) {
-            console.warn("Microphone permission denied or dismissed.", err);
+    const checkPermissionHistory = () => {
+        const hasAsked = localStorage.getItem('shakbot_mic_asked');
+        if (!hasAsked) {
+            setShowPermissionRequest(true);
         }
     };
-    requestMicPermission();
+    // Small delay to ensure UI is ready
+    const timer = setTimeout(checkPermissionHistory, 1000);
+    return () => clearTimeout(timer);
   }, []);
+
+  const handleInitialMicRequest = async () => {
+      try {
+          // Triggering getUserMedia inside a user click event prevents "Auto-Deny" on mobile
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          // We only need the permission, not the stream right now
+          stream.getTracks().forEach(track => track.stop());
+      } catch (e) {
+          console.warn("Microphone permission denied or dismissed.", e);
+      } finally {
+          localStorage.setItem('shakbot_mic_asked', 'true');
+          setShowPermissionRequest(false);
+      }
+  };
+
+  const handleSkipMic = () => {
+      localStorage.setItem('shakbot_mic_asked', 'true');
+      setShowPermissionRequest(false);
+  };
 
   // Check for existing session on mount
   useEffect(() => {
@@ -601,6 +621,43 @@ const App: React.FC = () => {
       
       {/* Interactive Superman Background (z-0) */}
       <HeroicBackground />
+
+      {/* Permission Modal */}
+      {showPermissionRequest && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+              <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-sm w-full shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-600 via-yellow-400 to-blue-600"></div>
+                  
+                  <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mb-4 text-red-500 ring-1 ring-red-500/50">
+                          <Mic size={32} />
+                      </div>
+                      
+                      <h3 className="text-xl font-bold text-white mb-2">Enable Voice Chat?</h3>
+                      <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+                          ShakBot works best with your voice. Enable microphone access to chat hands-free.
+                      </p>
+                      
+                      <div className="flex flex-col gap-3 w-full">
+                          <button 
+                            onClick={handleInitialMicRequest}
+                            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-900/20 active:scale-[0.98]"
+                          >
+                              <Check size={18} />
+                              Enable Microphone
+                          </button>
+                          
+                          <button 
+                            onClick={handleSkipMic}
+                            className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-3 px-4 rounded-xl transition-colors active:scale-[0.98]"
+                          >
+                              Maybe Later
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
 
       <Sidebar 
         sessions={sessions}
