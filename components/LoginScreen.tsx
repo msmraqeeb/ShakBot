@@ -224,8 +224,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
         </div>
       </div>
       
-      <div className="mt-8 text-blue-200 text-sm opacity-80 font-light tracking-wide z-10">
-        Powered by Gemini 2.5
+      {/* Footer */}
+      <div className="mt-8 z-10 text-center">
+        <div className="text-blue-200 text-sm opacity-80 font-light tracking-wide">
+            Powered by Gemini 2.5
+        </div>
+        <div className="mt-1 text-[10px] text-blue-200/50 font-light">
+            Proudly presented by: <a href="https://shakilmahmud.vercel.app/" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors underline decoration-blue-400/20">Shakil Mahmud</a>
+        </div>
       </div>
     </div>
   );

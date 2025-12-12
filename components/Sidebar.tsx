@@ -151,6 +151,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
              <LogOut size={16} />
              <span>Sign Out</span>
           </button>
+          
+          <div className="mt-4 text-center">
+            <p className="text-[10px] text-slate-500">
+                Proudly presented by: <a href="https://shakilmahmud.vercel.app/" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-white transition-colors">Shakil Mahmud</a>
+            </p>
+          </div>
         </div>
       </div>
     </>

@@ -859,7 +859,9 @@ const App: React.FC = () => {
             )}
 
             <div className="text-center mt-2 hidden md:block">
-                 <p className="text-[10px] text-slate-400/60 font-medium">Shakil can make mistakes. Verify important information.</p>
+                 <p className="text-[10px] text-slate-400/60 font-medium">
+                    Shakil can make mistakes. Verify important information. <span className="mx-1 opacity-40">|</span> Proudly presented by: <a href="https://shakilmahmud.vercel.app/" target="_blank" rel="noopener noreferrer" className="hover:text-yellow-400 transition-colors">Shakil Mahmud</a>
+                 </p>
             </div>
         </div>
 
