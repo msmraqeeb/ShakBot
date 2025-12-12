@@ -56,6 +56,21 @@ const App: React.FC = () => {
 
   // --- Helpers ---
 
+  // Request Microphone Permission on Mount
+  useEffect(() => {
+    const requestMicPermission = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // We just need the permission, so stop the stream immediately to save battery/privacy
+            stream.getTracks().forEach(track => track.stop());
+            console.log("Microphone permission granted.");
+        } catch (err) {
+            console.warn("Microphone permission denied or dismissed.", err);
+        }
+    };
+    requestMicPermission();
+  }, []);
+
   // Check for existing session on mount
   useEffect(() => {
     getCurrentUser().then(foundUser => {
