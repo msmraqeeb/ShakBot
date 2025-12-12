@@ -9,7 +9,8 @@ interface LoginScreenProps {
   isLoading: boolean;
 }
 
-const SHAKIL_AVATAR_URL = "https://images.unsplash.com/photo-1633957897986-70e83293f3ff?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxyb2JvdCUyMGF2YXRhcnxlbnwwfHx8fDE3NjQ2NTQwMjh8MA&ixlib=rb-4.1.0&q=80&w=1080";
+// Updated ShakBot Logo
+const SHAKIL_AVATAR_URL = "https://i.postimg.cc/25kL0JyV/shakbot-logo.png";
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoading: appLoading }) => {
   const [isLoginMode, setIsLoginMode] = useState(true);
