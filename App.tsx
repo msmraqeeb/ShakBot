@@ -8,7 +8,8 @@ import { LoginScreen } from './components/LoginScreen';
 import { AdminPanel } from './components/AdminPanel';
 import HeroicBackground from './components/HeroicBackground';
 import { createGenAIChat, sendMessageStream, generateSessionTitle, refineUserMemory, generateImageEdit } from './services/geminiService';
-import { logout } from './services/authService';
+import { logout, getCurrentUser } from './services/authService';
+import * as dbService from './services/dbService';
 
 // Updated with the user provided Unsplash URL
 const SHAKIL_AVATAR_URL = "https://images.unsplash.com/photo-1633957897986-70e83293f3ff?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxyb2JvdCUyMGF2YXRhcnxlbnwwfHx8fDE3NjQ2NTQwMjh8MA&ixlib=rb-4.1.0&q=80&w=1080";
@@ -21,7 +22,7 @@ interface SelectedImage {
 const App: React.FC = () => {
   // --- Auth State ---
   const [user, setUser] = useState<User | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   // --- State ---
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -55,92 +56,38 @@ const App: React.FC = () => {
 
   // --- Helpers ---
 
-  // Load User from Local Storage on mount
+  // Check for existing session on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('shakbot_user');
-    if (storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-        if (!parsedUser.isAdmin) {
-            loadUserData(parsedUser);
+    getCurrentUser().then(foundUser => {
+        if (foundUser) {
+            handleLoginSuccess(foundUser);
+        } else {
+            setIsAuthLoading(false);
         }
-      } catch (e) {
-        console.error("Failed to parse user from local storage");
-      }
-    }
+    });
   }, []);
 
-  // Helper to load memory and sessions for a specific user
-  const loadUserData = (userData: User) => {
-    // 1. Load Memory
-    const storedMemory = localStorage.getItem(`shakbot_memory_${userData.id}`);
-    if (storedMemory) {
-        setUserMemory(storedMemory);
-    } else {
-        setUserMemory('');
-    }
-
-    // 2. Load Chat History
+  // Helper to load memory and sessions for a specific user from Supabase
+  const loadUserData = async (userData: User) => {
+    setIsAuthLoading(true);
     try {
-        const storedSessions = localStorage.getItem(`shakbot_sessions_${userData.id}`);
-        if (storedSessions) {
-            const parsedSessions = JSON.parse(storedSessions);
-            if (Array.isArray(parsedSessions)) {
-                setSessions(parsedSessions);
-                // Set current session to the most recent one if available
-                if (parsedSessions.length > 0) {
-                    setCurrentSessionId(parsedSessions[parsedSessions.length - 1].id);
-                }
-            }
+        // 1. Load Memory
+        const memory = await dbService.fetchUserMemory(userData.id);
+        setUserMemory(memory);
+
+        // 2. Load Chat History
+        const loadedSessions = await dbService.fetchUserSessions(userData.id);
+        setSessions(loadedSessions);
+        
+        if (loadedSessions.length > 0) {
+            setCurrentSessionId(loadedSessions[loadedSessions.length - 1].id);
         }
     } catch (e) {
-        console.error("Failed to load sessions", e);
+        console.error("Failed to load user data", e);
+    } finally {
+        setIsAuthLoading(false);
     }
   };
-
-  // Save Sessions to Local Storage with Quota Management
-  useEffect(() => {
-    if (!user || user.isAdmin) return; // Admins don't save their view state to local storage sessions
-    
-    const key = `shakbot_sessions_${user.id}`;
-    
-    try {
-        localStorage.setItem(key, JSON.stringify(sessions));
-    } catch (e: any) {
-        // Handle QuotaExceededError
-        if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22) {
-            console.warn("Storage quota exceeded. Optimizing history...");
-            
-            // Strategy 1: Remove images from all sessions in storage (Heavy strings)
-            // We map through sessions and remove imageUrls, but keep a placeholder text
-            const textOnlySessions = sessions.map(s => ({
-                ...s,
-                messages: s.messages.map(m => {
-                     // Check if it has a large image url (Base64)
-                    if (m.imageUrl && m.imageUrl.length > 500) {
-                        return { ...m, imageUrl: undefined, text: m.text + '\n\n*[Image hidden from history to save space]*' };
-                    }
-                    return m;
-                })
-            }));
-
-            try {
-                localStorage.setItem(key, JSON.stringify(textOnlySessions));
-                console.log("History saved without images.");
-            } catch (e2) {
-                // Strategy 2: Keep only the last 5 sessions (Text Only)
-                console.warn("Still full. Trimming old sessions.");
-                const recentSessions = textOnlySessions.slice(-5);
-                try {
-                    localStorage.setItem(key, JSON.stringify(recentSessions));
-                } catch (e3) {
-                    console.error("Critically low storage. Could not save history.");
-                }
-            }
-        }
-    }
-  }, [sessions, user]);
 
   const getCurrentSession = useCallback(() => {
     return sessions.find(s => s.id === currentSessionId);
@@ -173,16 +120,16 @@ const App: React.FC = () => {
   
   const handleLoginSuccess = (loggedInUser: User) => {
     setUser(loggedInUser);
-    localStorage.setItem('shakbot_user', JSON.stringify(loggedInUser));
     
-    // Clear previous user state just in case
+    // Clear previous state
     setSessions([]);
     setCurrentSessionId(null);
     setUserMemory('');
 
     if (!loggedInUser.isAdmin) {
-        // Load new user data only if not admin
         loadUserData(loggedInUser);
+    } else {
+        setIsAuthLoading(false);
     }
   };
 
@@ -190,16 +137,14 @@ const App: React.FC = () => {
     await logout();
     setUser(null);
     setUserMemory('');
-    localStorage.removeItem('shakbot_user');
-    setSessions([]); // Clear sessions from view
+    setSessions([]); 
     setCurrentSessionId(null);
-    // Note: We do NOT clear localStorage sessions here, so they persist for next login
   };
 
-  // --- Voice Input Logic (Smart "Google Assistant" Style) ---
+  // --- Voice Input Logic ---
 
   const stopListening = useCallback(() => {
-    isListeningRef.current = false; // Flag to prevent auto-restart
+    isListeningRef.current = false; 
     
     if (recognitionRef.current) {
         try {
@@ -214,7 +159,6 @@ const App: React.FC = () => {
     setIsListening(false);
     setInterimTranscript('');
     
-    // Vibrate to indicate stop
     if (navigator.vibrate) navigator.vibrate(50);
   }, []);
 
@@ -226,28 +170,24 @@ const App: React.FC = () => {
       return;
     }
 
-    // Cleanup any existing instance
     if (recognitionRef.current) {
          isListeningRef.current = false;
          recognitionRef.current.onend = null;
          try { recognitionRef.current.stop(); } catch(e) {}
     }
 
-    // Vibrate start
     if (navigator.vibrate) navigator.vibrate(50);
 
     const recognition = new SpeechRecognition();
     recognition.lang = navigator.language || 'en-US';
-    recognition.continuous = false; // We use manual restart loop for better mobile support
+    recognition.continuous = false; 
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
-    // --- Core Logic for Text Handling ---
     recognition.onresult = (event: any) => {
-        // Reset silence timer whenever we hear something
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = setTimeout(() => {
-            stopListening(); // Auto-stop after 2.5 seconds of silence
+            stopListening(); 
         }, 2500);
 
         let finalTranscript = '';
@@ -261,11 +201,9 @@ const App: React.FC = () => {
             }
         }
 
-        // Append final text to input
         if (finalTranscript) {
             setInput(prev => {
                 const trimmed = prev.trim();
-                // Add space if needed
                 const spacer = trimmed.length > 0 && !trimmed.endsWith(' ') ? ' ' : '';
                 return trimmed + spacer + finalTranscript;
             });
@@ -278,10 +216,8 @@ const App: React.FC = () => {
         setIsListening(true);
         isListeningRef.current = true;
         
-        // Start silence timer immediately (waiting for first word)
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = setTimeout(() => {
-             // If no sound for 5 seconds at start, stop
              stopListening();
         }, 5000);
     };
@@ -292,18 +228,13 @@ const App: React.FC = () => {
             stopListening();
             alert("Microphone permission denied.");
         }
-        // 'no-speech' happens frequently, we handle it via loop
     };
 
     recognition.onend = () => {
-        // The Restart Loop: If we are still "listening" (isListeningRef is true),
-        // it means the browser stopped (due to silence or continuous=false),
-        // but we want to keep going until our explicit Silence Timer kills it.
         if (isListeningRef.current) {
             try {
                 recognition.start();
             } catch (e) {
-                // If start fails (fast click), just stop
                 stopListening();
             }
         } else {
@@ -343,7 +274,6 @@ const App: React.FC = () => {
       };
       reader.readAsDataURL(file);
     }
-    // Reset file input so same file can be selected again if needed
     if (fileInputRef.current) {
         fileInputRef.current.value = '';
     }
@@ -351,23 +281,31 @@ const App: React.FC = () => {
 
   // --- Core Logic ---
 
-  const createNewSession = useCallback(() => {
+  const createNewSession = useCallback(async () => {
+    if (!user) return;
+    const newId = uuidv4();
+    const title = 'New Conversation';
+    
+    // Optimistic UI update
     const newSession: ChatSession = {
-      id: uuidv4(),
-      title: 'New Conversation',
+      id: newId,
+      title: title,
       messages: [],
       createdAt: Date.now(),
     };
     setSessions(prev => [...prev, newSession]);
-    setCurrentSessionId(newSession.id);
-    // Pass userMemory and currentModel to the chat instance
-    chatInstanceRef.current = createGenAIChat(currentModel, [], userMemory); 
+    setCurrentSessionId(newId);
     setIsSidebarOpen(false);
-  }, [userMemory, currentModel]);
+
+    // Save to DB
+    await dbService.createSession(user.id, newId, title);
+
+    chatInstanceRef.current = createGenAIChat(currentModel, [], userMemory); 
+  }, [userMemory, currentModel, user]);
 
   // Restore Chat Instance when switching sessions
   useEffect(() => {
-    if (!user || user.isAdmin) return; // Don't manage sessions if not logged in or admin
+    if (!user || user.isAdmin) return; 
 
     if (!currentSessionId) {
        return;
@@ -375,26 +313,32 @@ const App: React.FC = () => {
 
     const session = sessions.find(s => s.id === currentSessionId);
     if (session) {
-      // Re-create the Gemini Chat object with the history, memory and CURRENT model
-      // This ensures if we switch models, it picks it up on session switch
       chatInstanceRef.current = createGenAIChat(currentModel, session.messages, userMemory);
     }
   }, [currentSessionId, sessions, user, userMemory, currentModel]);
 
   const handleSendMessage = async () => {
+    if (!user) return;
+
     // If no session exists, create one first
     if (!currentSessionId && sessions.length === 0) {
-        createNewSession();
         // Manually trigger for the new session logic
         const newId = uuidv4();
+        const title = 'New Conversation';
+        
+        // Optimistic UI
         const newSession: ChatSession = {
             id: newId,
-            title: 'New Conversation',
+            title: title,
             messages: [],
             createdAt: Date.now(),
         };
         setSessions(prev => [...prev, newSession]);
         setCurrentSessionId(newId);
+        
+        // DB
+        await dbService.createSession(user.id, newId, title);
+        
         chatInstanceRef.current = createGenAIChat(currentModel, [], userMemory);
         await processMessage(newId, newSession.messages);
         return;
@@ -407,21 +351,20 @@ const App: React.FC = () => {
   };
 
   const processMessage = async (sessionId: string, currentMessages: Message[]) => {
-    if ((!input.trim() && !selectedImage) || isLoading) return;
+    if ((!input.trim() && !selectedImage) || isLoading || !user) return;
 
-    // Stop listening if sending message
     if (isListening) {
         stopListening();
     }
 
     const userText = input.trim();
-    const attachedImage = selectedImage; // Capture current state before reset
+    const attachedImage = selectedImage; 
     const usingImageModel = isImageGenMode || !!attachedImage;
 
     // Reset Input UI
     setInput('');
     setSelectedImage(null);
-    if (isImageGenMode) setIsImageGenMode(false); // Optional: Exit gen mode after sending?
+    if (isImageGenMode) setIsImageGenMode(false); 
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     const userMessage: Message = {
@@ -432,7 +375,7 @@ const App: React.FC = () => {
       timestamp: Date.now()
     };
 
-    // Update UI immediately with user message
+    // Update UI immediately
     setSessions(prev => prev.map(session => {
       if (session.id === sessionId) {
         return {
@@ -445,14 +388,12 @@ const App: React.FC = () => {
 
     setIsLoading(true);
 
+    // Save User Message to DB
+    await dbService.saveMessage(sessionId, userMessage);
+
     try {
-      
-      // Check if this is an image edit/generation request
-      
       if (usingImageModel) {
-        // --- Image Editing / Generation Mode ---
-        // gemini-2.5-flash-image handles both text-to-image and image-to-image (edit)
-        
+        // --- Image Mode ---
         const response = await generateImageEdit(userText, attachedImage?.data, attachedImage?.mimeType);
 
         const botMessage: Message = {
@@ -469,17 +410,13 @@ const App: React.FC = () => {
             }
             return session;
         }));
+        
+        await dbService.saveMessage(sessionId, botMessage);
 
       } else {
-         // --- Standard Chat Flow ---
-
-         // Always ensure we have a fresh chat instance using the CURRENTLY selected model
-         // This allows dynamic switching between Flash and Pro in the same chat
-         // We pass the updated message history (excluding the one we just added? No, sdk history handles previous turns)
-         // We pass `currentMessages` which is history *before* this new message.
+         // --- Text Mode ---
          chatInstanceRef.current = createGenAIChat(currentModel, currentMessages, userMemory);
 
-        // Placeholder for bot message
         const botMessageId = uuidv4();
         const botMessagePlaceholder: Message = {
             id: botMessageId,
@@ -513,27 +450,32 @@ const App: React.FC = () => {
             }));
         }
 
-        // After a successful response, try to refine the memory in the background
+        // Save Bot Message to DB
+        const finalBotMessage: Message = {
+            ...botMessagePlaceholder,
+            text: accumulatedText
+        };
+        await dbService.saveMessage(sessionId, finalBotMessage);
+
+        // Refine memory
         if (user) {
-            // We only refine memory if the user sent text
-            refineUserMemory(userMemory, userText, accumulatedText).then(newMemory => {
-                // If memory changed, save it
+            refineUserMemory(userMemory, userText, accumulatedText).then(async newMemory => {
                 if (newMemory !== userMemory) {
-                    console.log("Memory updated:", newMemory);
+                    console.log("Memory updated");
                     setUserMemory(newMemory);
-                    localStorage.setItem(`shakbot_memory_${user.id}`, newMemory);
+                    await dbService.saveUserMemory(user.id, newMemory);
                 }
             });
         }
       }
 
-      // Generate title if needed (common for both flows)
-      // Logic: if it WAS empty/new, now it has 2 messages.
+      // Generate title if needed
       setSessions(prev => {
           const s = prev.find(s => s.id === sessionId);
           if (s && s.messages.length === 2) {
-              generateSessionTitle(userText).then(title => {
+              generateSessionTitle(userText).then(async title => {
                   setSessions(curr => curr.map(x => x.id === sessionId ? { ...x, title } : x));
+                  await dbService.updateSessionTitle(sessionId, title);
               });
           }
           return prev;
@@ -546,14 +488,12 @@ const App: React.FC = () => {
       
       // Robust Error Parsing for 429 / Quota
       let errorMessageString = '';
-      
       if (error) {
           if (typeof error === 'string') {
             errorMessageString = error;
           } else if (error instanceof Error) {
             errorMessageString = error.message;
           } 
-          
           try {
             const jsonString = JSON.stringify(error);
             errorMessageString += ' ' + jsonString;
@@ -565,14 +505,7 @@ const App: React.FC = () => {
       const errorCode = error?.error?.code || error?.status || error?.code;
       const errorStatus = error?.error?.status || error?.statusText;
 
-      // Handle Rate Limits (429) specifically
-      if (
-        errorMessageString.includes('429') || 
-        errorMessageString.toLowerCase().includes('quota') || 
-        errorMessageString.includes('RESOURCE_EXHAUSTED') ||
-        errorCode === 429 ||
-        errorStatus === 'RESOURCE_EXHAUSTED'
-      ) {
+      if (errorMessageString.includes('429') || errorCode === 429 || errorStatus === 'RESOURCE_EXHAUSTED') {
         errorText = "⚠️ **Rate Limit Exceeded**: My energy is temporarily depleted (Error 429). I am automatically retrying... if this persists, please wait 30 seconds.";
       }
 
@@ -590,43 +523,60 @@ const App: React.FC = () => {
         }
         return session;
       }));
+
+      // Don't save transient errors to DB? Or maybe we should. Let's save them so user sees what happened.
+      await dbService.saveMessage(sessionId, errorMessage);
+
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Enable enter to go to new line (default behavior).
-    // Send message only on Ctrl + Enter or Cmd + Enter.
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleSendMessage();
     }
   };
 
-  const deleteSession = (id: string, e: React.MouseEvent) => {
+  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // Optimistic Delete
     const newSessions = sessions.filter(s => s.id !== id);
     setSessions(newSessions);
     
     if (currentSessionId === id) {
       setCurrentSessionId(newSessions.length > 0 ? newSessions[newSessions.length - 1].id : null);
     }
+
+    await dbService.deleteSession(id);
   };
 
   const currentSession = getCurrentSession();
 
   // --- Auth Gate ---
-  if (!user) {
+  if (!user && !isAuthLoading) {
     return <LoginScreen onLoginSuccess={handleLoginSuccess} isLoading={isAuthLoading} />;
+  }
+  
+  // Loading spinner while checking session
+  if (isAuthLoading && !user) {
+      return (
+          <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-white">
+              <Loader2 className="animate-spin mb-4" size={32} />
+          </div>
+      )
   }
 
   // --- Admin Mode ---
-  if (user.isAdmin) {
+  if (user?.isAdmin) {
       return <AdminPanel onLogout={handleLogout} currentUser={user} />;
   }
 
   // --- Main App Render ---
+  if (!user) return null; // Should be handled by loading or login screen
+
   return (
     <div className="flex h-dvh text-slate-100 font-sans overflow-hidden relative selection:bg-red-500/30">
       
@@ -638,7 +588,7 @@ const App: React.FC = () => {
         currentSessionId={currentSessionId}
         onSelectSession={setCurrentSessionId}
         onNewChat={createNewSession}
-        onDeleteSession={deleteSession}
+        onDeleteSession={handleDeleteSession}
         isOpen={isSidebarOpen}
         setIsOpen={setIsSidebarOpen}
         user={user}

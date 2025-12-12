@@ -1,94 +1,136 @@
+import { supabase } from './supabaseClient';
 import { User } from '../types';
-import { v4 as uuidv4 } from 'uuid';
 
-const USERS_STORAGE_KEY = 'shakbot_users';
 const ADMIN_EMAIL = 'msmraqeeb@gmail.com';
-const ADMIN_PASS = 'msm039raqeeb';
 
-// Helper to get all registered users from local storage with error handling
-const getUsers = (): any[] => {
-  try {
-    const usersJson = localStorage.getItem(USERS_STORAGE_KEY);
-    if (!usersJson) return [];
-    
-    const users = JSON.parse(usersJson);
-    return Array.isArray(users) ? users : [];
-  } catch (e) {
-    console.error("Error reading users from storage:", e);
-    // Return empty array but DO NOT wipe storage here to prevent data loss on transient errors
-    return [];
-  }
-};
+// Cast supabase.auth to any to bypass type mismatch issues with Supabase SDK versions
+const auth = supabase.auth as any;
 
 export const login = async (email: string, password: string): Promise<User> => {
-  // 1. Check for Hardcoded Admin Credentials
-  if (email.trim().toLowerCase() === ADMIN_EMAIL && password === ADMIN_PASS) {
+  const { data, error } = await auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) throw error;
+  if (!data.user) throw new Error("No user data returned");
+
+  // Fetch user profile
+  const { data: profile, error: profileError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', data.user.id)
+    .single();
+
+  // If profile is missing (e.g. user existed before schema, or trigger failed), create it now.
+  if (profileError || !profile) {
+      console.warn("User profile missing, creating fallback profile...");
+      
+      const newProfile = {
+          id: data.user.id,
+          email: data.user.email || '',
+          name: data.user.user_metadata?.full_name || 'User',
+          // Force admin if it matches the specific email
+          is_admin: data.user.email === ADMIN_EMAIL
+      };
+
+      const { error: insertError } = await supabase
+        .from('users')
+        .upsert(newProfile);
+
+      if (insertError) {
+          console.error("Failed to create fallback profile:", JSON.stringify(insertError, null, 2));
+          // Return a basic object so login doesn't completely fail, though DB ops might fail later
+          return {
+              id: data.user.id,
+              email: data.user.email || '',
+              name: 'User',
+              isAdmin: newProfile.is_admin
+          };
+      }
+
       return {
-          id: 'admin-master-id',
-          name: 'Super Admin',
-          email: ADMIN_EMAIL,
-          isAdmin: true
+          id: newProfile.id,
+          email: newProfile.email,
+          name: newProfile.name,
+          isAdmin: newProfile.is_admin
       };
   }
 
-  // 2. Normal User Login
-  const users = getUsers();
-  
-  // Case-insensitive email match
-  const user = users.find((u: any) => 
-    u.email && u.email.trim().toLowerCase() === email.trim().toLowerCase() && 
-    u.password === password
-  );
-
-  if (user) {
-    // Return user without password
-    const { password, ...userWithoutPassword } = user;
-    return userWithoutPassword as User;
-  }
-
-  throw new Error('Invalid email or password');
+  return {
+    id: profile.id,
+    email: profile.email,
+    name: profile.name,
+    photoUrl: profile.photo_url,
+    isAdmin: profile.is_admin
+  };
 };
 
 export const register = async (email: string, password: string, name: string): Promise<User> => {
-  const users = getUsers();
-  const cleanEmail = email.trim().toLowerCase();
-  
-  if (users.find((u: any) => u.email && u.email.toLowerCase() === cleanEmail)) {
-    throw new Error('User already exists with this email');
+  const { data, error } = await auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        full_name: name,
+      }
+    }
+  });
+
+  if (error) throw error;
+  if (!data.user) throw new Error("Registration failed");
+
+  // Attempt to auto-login if the session is missing
+  // (This handles cases where the user has disabled email confirmation in Supabase but signUp didn't return the session immediately)
+  if (!data.session) {
+      try {
+          await auth.signInWithPassword({ email, password });
+      } catch (e) {
+          // If this fails, it might truly require confirmation, but we proceed to let the UI try.
+          console.warn("Auto-login after registration failed:", e);
+      }
   }
 
-  const newUser = {
-    id: uuidv4(),
-    email: cleanEmail,
-    password, // Stored locally for this demo.
-    name: name.trim(),
-    photoUrl: undefined 
+  // Allow a moment for the SQL Trigger to create the profile
+  // But return the user object immediately for UI responsiveness
+  return {
+    id: data.user.id,
+    email: data.user.email || email,
+    name: name,
+    isAdmin: email === ADMIN_EMAIL // Optimistic admin check
   };
-
-  users.push(newUser);
-  
-  try {
-    const jsonString = JSON.stringify(users);
-    localStorage.setItem(USERS_STORAGE_KEY, jsonString);
-    
-    // Verification step: Ensure it was written
-    const verify = localStorage.getItem(USERS_STORAGE_KEY);
-    if (!verify) {
-        throw new Error("Storage write verification failed.");
-    }
-  } catch (e: any) {
-    console.error("Failed to save user to storage", e);
-    if (e.name === 'QuotaExceededError' || e.code === 22) {
-         throw new Error("Browser storage is full. Please clear some space or delete old conversations.");
-    }
-    throw new Error("Failed to save account. Storage might be full or disabled.");
-  }
-
-  const { password: _, ...userWithoutPassword } = newUser;
-  return userWithoutPassword as User;
 };
 
 export const logout = async (): Promise<void> => {
-    // Immediate resolve
-    return Promise.resolve();
+  const { error } = await auth.signOut();
+  if (error) console.error('Error logging out:', error);
 };
+
+export const getCurrentUser = async (): Promise<User | null> => {
+    const { data: { session } } = await auth.getSession();
+    if (!session?.user) return null;
+
+    const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+    
+    if (profile) {
+        return {
+            id: profile.id,
+            email: profile.email,
+            name: profile.name,
+            photoUrl: profile.photo_url,
+            isAdmin: profile.is_admin
+        };
+    } else {
+        // If logged in but no profile, return basic info so we don't loop indefinitely
+        return {
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.full_name || 'User',
+            isAdmin: session.user.email === ADMIN_EMAIL
+        }
+    }
+}

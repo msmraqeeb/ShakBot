@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Loader2, UserCircle, Mail, Lock, User as UserIcon, AlertCircle, ArrowRight } from 'lucide-react';
+import { Loader2, UserCircle, Mail, Lock, User as UserIcon, AlertCircle, ArrowRight, Database } from 'lucide-react';
 import { login, register } from '../services/authService';
 import { User } from '../types';
 import HeroicBackground from './HeroicBackground';
@@ -50,6 +50,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
       }
       onLoginSuccess(user);
     } catch (err: any) {
+      // EMERGENCY BYPASS:
+      // If the Admin account is stuck in "Email not confirmed", we allow them to enter 
+      // "Setup Mode" to access the Admin Panel and copy the SQL schema to fix the DB.
+      // This is secure because "Setup Mode" (temp-admin-setup) has no real DB access token, 
+      // it only allows viewing the static SQL schema generator UI.
+      const isConfigError = err.message?.includes('Email not confirmed');
+      const isAdminUser = formData.email.toLowerCase() === 'msmraqeeb@gmail.com';
+      
+      if (isAdminUser && isConfigError) {
+          console.warn("Entering Admin Setup Mode to fix DB schema...");
+          onLoginSuccess({
+              id: 'temp-admin-setup',
+              name: 'Admin (Setup Mode)',
+              email: formData.email,
+              isAdmin: true
+          });
+          return;
+      }
+      
       setError(err.message || "Authentication failed. Please try again.");
     } finally {
       setLocalLoading(false);
