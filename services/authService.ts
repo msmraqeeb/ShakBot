@@ -2,6 +2,8 @@ import { User } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 const USERS_STORAGE_KEY = 'shakbot_users';
+const ADMIN_EMAIL = 'msmraqeeb@gmail.com';
+const ADMIN_PASS = 'msm039raqeeb';
 
 // Helper to get all registered users from local storage with error handling
 const getUsers = (): any[] => {
@@ -19,7 +21,17 @@ const getUsers = (): any[] => {
 };
 
 export const login = async (email: string, password: string): Promise<User> => {
-  // Synchronous execution for reliability
+  // 1. Check for Hardcoded Admin Credentials
+  if (email.trim().toLowerCase() === ADMIN_EMAIL && password === ADMIN_PASS) {
+      return {
+          id: 'admin-master-id',
+          name: 'Super Admin',
+          email: ADMIN_EMAIL,
+          isAdmin: true
+      };
+  }
+
+  // 2. Normal User Login
   const users = getUsers();
   
   // Case-insensitive email match

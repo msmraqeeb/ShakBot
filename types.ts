@@ -8,6 +8,7 @@ export interface User {
   name: string;
   email: string;
   photoUrl?: string;
+  isAdmin?: boolean;
 }
 
 export interface Message {

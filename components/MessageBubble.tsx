@@ -133,7 +133,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
             </div>
           )}
 
-          <div className={`prose prose-sm md:prose-base prose-invert max-w-none leading-relaxed break-words`}>
+          <div className={`
+            prose prose-sm md:prose-base prose-invert max-w-none break-words
+            prose-headings:mt-8 prose-headings:mb-4 prose-headings:font-bold prose-headings:text-yellow-400
+            prose-p:my-4 prose-p:leading-7
+            prose-ul:my-4 prose-li:my-2
+            prose-strong:text-yellow-400
+          `}>
             {isUser ? (
               <p className="whitespace-pre-wrap">{message.text}</p>
             ) : (

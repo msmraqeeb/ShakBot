@@ -5,6 +5,7 @@ import { ChatSession, Message, Role, User } from './types';
 import { Sidebar } from './components/Sidebar';
 import { MessageBubble } from './components/MessageBubble';
 import { LoginScreen } from './components/LoginScreen';
+import { AdminPanel } from './components/AdminPanel';
 import HeroicBackground from './components/HeroicBackground';
 import { createGenAIChat, sendMessageStream, generateSessionTitle, refineUserMemory, generateImageEdit } from './services/geminiService';
 import { logout } from './services/authService';
@@ -61,7 +62,9 @@ const App: React.FC = () => {
       try {
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
-        loadUserData(parsedUser);
+        if (!parsedUser.isAdmin) {
+            loadUserData(parsedUser);
+        }
       } catch (e) {
         console.error("Failed to parse user from local storage");
       }
@@ -98,7 +101,7 @@ const App: React.FC = () => {
 
   // Save Sessions to Local Storage with Quota Management
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.isAdmin) return; // Admins don't save their view state to local storage sessions
     
     const key = `shakbot_sessions_${user.id}`;
     
@@ -177,8 +180,10 @@ const App: React.FC = () => {
     setCurrentSessionId(null);
     setUserMemory('');
 
-    // Load new user data
-    loadUserData(loggedInUser);
+    if (!loggedInUser.isAdmin) {
+        // Load new user data only if not admin
+        loadUserData(loggedInUser);
+    }
   };
 
   const handleLogout = async () => {
@@ -362,7 +367,7 @@ const App: React.FC = () => {
 
   // Restore Chat Instance when switching sessions
   useEffect(() => {
-    if (!user) return; // Don't manage sessions if not logged in
+    if (!user || user.isAdmin) return; // Don't manage sessions if not logged in or admin
 
     if (!currentSessionId) {
        return;
@@ -616,6 +621,11 @@ const App: React.FC = () => {
     return <LoginScreen onLoginSuccess={handleLoginSuccess} isLoading={isAuthLoading} />;
   }
 
+  // --- Admin Mode ---
+  if (user.isAdmin) {
+      return <AdminPanel onLogout={handleLogout} currentUser={user} />;
+  }
+
   // --- Main App Render ---
   return (
     <div className="flex h-dvh text-slate-100 font-sans overflow-hidden relative selection:bg-red-500/30">
@@ -686,7 +696,7 @@ const App: React.FC = () => {
 
         {/* Chat Area */}
         <div className="flex-1 overflow-y-auto px-2 md:px-4 pt-4 md:pt-6 pb-4 scroll-smooth">
-          <div className="max-w-3xl mx-auto min-h-full flex flex-col">
+          <div className="max-w-6xl mx-auto w-full min-h-full flex flex-col">
             
             {!currentSession || currentSession.messages.length === 0 ? (
                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 md:p-8">
@@ -737,7 +747,7 @@ const App: React.FC = () => {
         <div className="p-3 md:p-4 bg-slate-950/60 backdrop-blur-xl border-t border-white/10 transition-colors duration-300">
             {/* Image Preview */}
             {selectedImage && (
-                <div className="max-w-3xl mx-auto mb-2 flex">
+                <div className="max-w-6xl w-full mx-auto mb-2 flex">
                     <div className="relative group">
                         <img 
                             src={selectedImage.data} 
@@ -756,7 +766,7 @@ const App: React.FC = () => {
 
             {/* Voice Interim Preview Overlay (Floating above input) */}
             {isListening && interimTranscript && (
-               <div className="max-w-3xl mx-auto mb-2">
+               <div className="max-w-6xl w-full mx-auto mb-2">
                    <div className="bg-red-950/80 backdrop-blur-md text-red-100 text-sm px-3 py-2 rounded-lg border border-red-800/50 italic flex items-center gap-2 shadow-lg animate-in fade-in slide-in-from-bottom-2">
                       <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                       <span>{interimTranscript}</span>
@@ -776,7 +786,7 @@ const App: React.FC = () => {
             {/* Input Container - Conditional Rendering for Gen Mode vs Chat Mode */}
             {isImageGenMode ? (
               // IMAGE GENERATION MODE BAR
-              <div className="max-w-3xl mx-auto relative flex items-center gap-2 bg-indigo-950/90 backdrop-blur-lg p-2 rounded-3xl border border-indigo-500/50 shadow-2xl animate-in fade-in slide-in-from-bottom-2">
+              <div className="max-w-6xl w-full mx-auto relative flex items-center gap-2 bg-indigo-950/90 backdrop-blur-lg p-2 rounded-3xl border border-indigo-500/50 shadow-2xl animate-in fade-in slide-in-from-bottom-2">
                  <button
                     onClick={() => setIsImageGenMode(false)}
                     className="p-3 rounded-full flex items-center justify-center text-indigo-300 hover:bg-indigo-800 hover:text-white transition-colors"
@@ -820,7 +830,7 @@ const App: React.FC = () => {
             ) : (
               // STANDARD CHAT MODE BAR
               <div className={`
-                max-w-3xl mx-auto relative flex items-end gap-1 md:gap-2 bg-slate-900/60 backdrop-blur-md p-1.5 md:p-2 rounded-3xl border transition-all duration-500 ease-in-out
+                max-w-6xl w-full mx-auto relative flex items-end gap-1 md:gap-2 bg-slate-900/60 backdrop-blur-md p-1.5 md:p-2 rounded-3xl border transition-all duration-500 ease-in-out
                 ${isListening 
                   ? 'border-red-500/50 shadow-[0_0_25px_rgba(220,38,38,0.25)] ring-1 ring-red-500/30 bg-gradient-to-r from-red-950/30 via-slate-900/60 to-red-950/30' 
                   : 'border-white/10 focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/30 shadow-lg'}

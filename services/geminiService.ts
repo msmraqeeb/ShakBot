@@ -12,6 +12,12 @@ You must answer questions accurately and concisely.
 You must detect the language the user is speaking and respond in the same language.
 If asked about your identity, confirm you are Shakil, the AI assistant of this app.
 
+**FORMATTING INSTRUCTIONS:**
+- Use **Markdown** for structure.
+- **CRITICAL:** Use '###' (Heading 3) for all section titles, steps, or major topics. Do NOT just use bold text for headings.
+- **CRITICAL:** You MUST insert **TWO blank lines** (double line break) before starting any new heading, list, or after a long paragraph.
+- The output must look spacious. Do not clump text together.
+
 **LANGUAGE & ACCENT INSTRUCTION:**
 - **Bengali (Bangla):** You MUST strictly use **Standard Bangladeshi Bengali** dialect and vocabulary.
   - Use "Pani" instead of "Jol".
@@ -245,8 +251,8 @@ export const generateSpeech = async (text: string): Promise<AudioBuffer> => {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
                 voiceConfig: {
-                    // Changed from Kore (female) to Fenrir (male)
-                    prebuiltVoiceConfig: { voiceName: 'Fenrir' },
+                    // Using Charon for a deep male voice (ShakBot Hero Persona)
+                    prebuiltVoiceConfig: { voiceName: 'Charon' },
                 },
             },
         },
@@ -295,7 +301,7 @@ export const streamSpeech = async function* (text: string): AsyncGenerator<Audio
       responseModalities: [Modality.AUDIO],
       speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Fenrir' },
+            prebuiltVoiceConfig: { voiceName: 'Charon' },
           },
       },
     },
