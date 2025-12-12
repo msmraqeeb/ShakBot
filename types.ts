@@ -15,6 +15,7 @@ export interface Message {
   role: Role;
   text: string;
   timestamp: number;
+  imageUrl?: string; // Base64 data URI for images (uploaded or generated)
   isError?: boolean;
 }
 

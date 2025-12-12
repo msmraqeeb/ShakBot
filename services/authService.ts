@@ -3,18 +3,30 @@ import { v4 as uuidv4 } from 'uuid';
 
 const USERS_STORAGE_KEY = 'shakbot_users';
 
-// Helper to get all registered users from local storage
+// Helper to get all registered users from local storage with error handling
 const getUsers = (): any[] => {
-  const usersJson = localStorage.getItem(USERS_STORAGE_KEY);
-  return usersJson ? JSON.parse(usersJson) : [];
+  try {
+    const usersJson = localStorage.getItem(USERS_STORAGE_KEY);
+    if (!usersJson) return [];
+    
+    const users = JSON.parse(usersJson);
+    return Array.isArray(users) ? users : [];
+  } catch (e) {
+    console.error("Error reading users from storage:", e);
+    // Return empty array but DO NOT wipe storage here to prevent data loss on transient errors
+    return [];
+  }
 };
 
 export const login = async (email: string, password: string): Promise<User> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 800));
-
+  // Synchronous execution for reliability
   const users = getUsers();
-  const user = users.find((u: any) => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+  
+  // Case-insensitive email match
+  const user = users.find((u: any) => 
+    u.email && u.email.trim().toLowerCase() === email.trim().toLowerCase() && 
+    u.password === password
+  );
 
   if (user) {
     // Return user without password
@@ -26,31 +38,45 @@ export const login = async (email: string, password: string): Promise<User> => {
 };
 
 export const register = async (email: string, password: string, name: string): Promise<User> => {
-  await new Promise(resolve => setTimeout(resolve, 800));
-
   const users = getUsers();
+  const cleanEmail = email.trim().toLowerCase();
   
-  if (users.find((u: any) => u.email.toLowerCase() === email.toLowerCase())) {
+  if (users.find((u: any) => u.email && u.email.toLowerCase() === cleanEmail)) {
     throw new Error('User already exists with this email');
   }
 
   const newUser = {
     id: uuidv4(),
-    email,
-    password, // In a real app, never store passwords in plain text!
-    name,
-    photoUrl: undefined // Local users might not have a photo initially
+    email: cleanEmail,
+    password, // Stored locally for this demo.
+    name: name.trim(),
+    photoUrl: undefined 
   };
 
   users.push(newUser);
-  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+  
+  try {
+    const jsonString = JSON.stringify(users);
+    localStorage.setItem(USERS_STORAGE_KEY, jsonString);
+    
+    // Verification step: Ensure it was written
+    const verify = localStorage.getItem(USERS_STORAGE_KEY);
+    if (!verify) {
+        throw new Error("Storage write verification failed.");
+    }
+  } catch (e: any) {
+    console.error("Failed to save user to storage", e);
+    if (e.name === 'QuotaExceededError' || e.code === 22) {
+         throw new Error("Browser storage is full. Please clear some space or delete old conversations.");
+    }
+    throw new Error("Failed to save account. Storage might be full or disabled.");
+  }
 
   const { password: _, ...userWithoutPassword } = newUser;
   return userWithoutPassword as User;
 };
 
 export const logout = async (): Promise<void> => {
-    return new Promise((resolve) => {
-        setTimeout(resolve, 300);
-    });
+    // Immediate resolve
+    return Promise.resolve();
 };

@@ -83,17 +83,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 
   return (
     <div className={`flex w-full mb-6 ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`flex max-w-[85%] md:max-w-[75%] gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      <div className={`flex max-w-[92%] md:max-w-[75%] gap-2 md:gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
         
         {/* Avatar */}
         <div className={`
-          flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-md overflow-hidden border-2
-          ${isUser ? 'bg-blue-600 text-white border-blue-500' : isError ? 'bg-red-100 text-red-600 border-red-200' : 'bg-red-600 border-yellow-400'}
+          flex-shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-lg overflow-hidden border-2
+          ${isUser ? 'bg-blue-600 text-white border-blue-500' : isError ? 'bg-red-950 text-red-500 border-red-800' : 'bg-red-600 border-yellow-400'}
         `}>
           {isUser ? (
-             <User size={20} />
+             <User size={16} className="md:w-5 md:h-5" />
           ) : isError ? (
-             <AlertCircle size={20} />
+             <AlertCircle size={16} className="md:w-5 md:h-5" />
           ) : (
              <img 
                src={SHAKIL_AVATAR_URL} 
@@ -105,24 +105,35 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 
         {/* Message Content */}
         <div className={`
-          flex flex-col p-4 rounded-2xl shadow-sm overflow-hidden text-sm md:text-base relative group
+          flex flex-col p-3 md:p-4 rounded-2xl shadow-lg overflow-hidden text-sm md:text-base relative group backdrop-blur-md
           ${isUser 
             ? 'bg-blue-600 text-white rounded-tr-none' 
             : isError
-              ? 'bg-red-50 border border-red-200 text-red-800 rounded-tl-none'
-              : 'bg-white border-l-4 border-yellow-400 text-slate-800 rounded-tl-none'
+              ? 'bg-red-950/80 border border-red-800/50 text-red-200 rounded-tl-none'
+              : 'bg-slate-900/80 border-l-4 border-yellow-400 text-slate-100 rounded-tl-none border-t border-r border-b border-white/5'
           }
         `}>
           {/* Header for Shakil */}
           {!isUser && !isError && (
             <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-red-600 uppercase tracking-wider flex items-center gap-1">
+                <span className="text-[10px] md:text-xs font-bold text-yellow-400 uppercase tracking-wider flex items-center gap-1">
                 Shakil AI
                 </span>
             </div>
           )}
 
-          <div className={`prose ${isUser ? 'prose-invert' : 'prose-slate'} max-w-none leading-relaxed break-words`}>
+          {/* Image Attachment (User upload or Model Generation) */}
+          {message.imageUrl && (
+            <div className="mb-3 rounded-lg overflow-hidden border border-white/10 shadow-sm max-w-sm">
+                <img 
+                    src={message.imageUrl} 
+                    alt="Content" 
+                    className="w-full h-auto object-contain bg-slate-900/50" 
+                />
+            </div>
+          )}
+
+          <div className={`prose prose-sm md:prose-base prose-invert max-w-none leading-relaxed break-words`}>
             {isUser ? (
               <p className="whitespace-pre-wrap">{message.text}</p>
             ) : (
@@ -130,7 +141,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
             )}
           </div>
           
-          <div className="flex items-center justify-between mt-2 min-h-[24px]">
+          <div className="flex items-center justify-between mt-2 min-h-[20px]">
             <span className={`text-[10px] opacity-70 ${isUser ? 'text-blue-100' : 'text-slate-400'}`}>
                 {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
@@ -141,10 +152,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                     onClick={handleCopy}
                     className={`
                         p-1.5 rounded-full transition-all flex items-center gap-1
-                        opacity-0 group-hover:opacity-100 focus:opacity-100
+                        opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100
                         ${isUser 
                             ? 'text-blue-200 hover:bg-blue-500 hover:text-white' 
-                            : 'text-slate-400 hover:bg-slate-100 hover:text-blue-600'}
+                            : 'text-slate-500 hover:bg-white/10 hover:text-blue-300'}
                     `}
                     title="Copy text"
                 >
@@ -159,8 +170,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                         className={`
                             p-1.5 rounded-full transition-all flex items-center gap-1
                             ${isPlaying 
-                                ? 'bg-red-100 text-red-600 ring-2 ring-red-200' 
-                                : 'bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600'}
+                                ? 'bg-red-900/50 text-red-400 ring-2 ring-red-800' 
+                                : 'bg-white/5 text-slate-400 hover:bg-blue-900/30 hover:text-blue-300'}
                         `}
                         title="Read aloud"
                     >

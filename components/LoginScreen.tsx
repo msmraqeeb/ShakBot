@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Loader2, UserCircle, Mail, Lock, User as UserIcon, AlertCircle, ArrowRight } from 'lucide-react';
 import { login, register } from '../services/authService';
 import { User } from '../types';
+import HeroicBackground from './HeroicBackground';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: User) => void;
@@ -66,24 +67,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-red-900 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden transform transition-all">
+    <div className="min-h-dvh flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      
+      {/* Superman Interactive Background */}
+      <HeroicBackground />
+
+      <div className="w-[95%] max-w-md bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden transform transition-all z-10 border border-white/20">
         
         {/* Header Section */}
         <div className="bg-slate-50 p-6 text-center border-b border-slate-100">
-          <div className="w-20 h-20 bg-red-600 rounded-full mx-auto flex items-center justify-center shadow-lg mb-4 border-4 border-yellow-400 overflow-hidden">
+          <div className="w-16 h-16 md:w-20 md:h-20 bg-red-600 rounded-full mx-auto flex items-center justify-center shadow-lg mb-4 border-4 border-yellow-400 overflow-hidden">
              <img src={SHAKIL_AVATAR_URL} alt="Shakil AI" className="w-full h-full object-cover" />
           </div>
-          <h1 className="text-2xl font-bold text-blue-900">
+          <h1 className="text-xl md:text-2xl font-bold text-blue-900">
             {isLoginMode ? 'Welcome Back!' : 'Join ShakBot'}
           </h1>
-          <p className="text-slate-500 text-sm mt-1">
+          <p className="text-slate-500 text-xs md:text-sm mt-1">
             {isLoginMode ? 'Enter your credentials to continue.' : 'Create an account to save your chats.'}
           </p>
         </div>
 
         {/* Form Section */}
-        <div className="p-8">
+        <div className="p-6 md:p-8">
           <form onSubmit={handleSubmit} className="space-y-4">
             
             {error && (
@@ -104,7 +109,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
                     value={formData.name}
                     onChange={handleInputChange}
                     placeholder="Clark Kent"
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm"
+                    autoComplete="name"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-base"
                   />
                 </div>
               </div>
@@ -120,7 +126,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
                   value={formData.email}
                   onChange={handleInputChange}
                   placeholder="hero@example.com"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm"
+                  autoComplete="username"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-base"
                 />
               </div>
             </div>
@@ -135,7 +142,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
                   value={formData.password}
                   onChange={handleInputChange}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm"
+                  autoComplete={isLoginMode ? "current-password" : "new-password"}
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-base"
                 />
               </div>
             </div>
@@ -143,7 +151,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
             <button 
               type="submit"
               disabled={isLoading}
-              className="w-full bg-red-600 hover:bg-red-700 text-yellow-50 font-bold py-3 px-4 rounded-xl transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 mt-4 flex items-center justify-center gap-2"
+              className="w-full bg-red-600 hover:bg-red-700 text-yellow-50 font-bold py-3 px-4 rounded-xl transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 mt-4 flex items-center justify-center gap-2 active:scale-[0.98]"
             >
               {isLoading ? (
                 <>
@@ -185,7 +193,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
 
           <button 
             onClick={handleGuestLogin}
-            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 px-4 rounded-xl transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2 group border border-slate-200"
+            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 px-4 rounded-xl transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2 group border border-slate-200 active:scale-[0.98]"
           >
             <UserCircle size={20} className="text-slate-500 group-hover:text-blue-600 transition-colors" />
             <span>Continue as Guest</span>
@@ -197,7 +205,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
         </div>
       </div>
       
-      <div className="mt-8 text-blue-200 text-sm opacity-80 font-light tracking-wide">
+      <div className="mt-8 text-blue-200 text-sm opacity-80 font-light tracking-wide z-10">
         Powered by Gemini 2.5
       </div>
     </div>
