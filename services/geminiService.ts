@@ -31,7 +31,7 @@ If asked about your identity, confirm you are Shakil, the AI assistant of this a
 // --- Retry Helper ---
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function retryWithBackoff<T>(fn: () => Promise<T>, retries = 6, initialDelay = 1000): Promise<T> {
+async function retryWithBackoff<T>(fn: () => Promise<T>, retries = 6, initialDelay = 2000): Promise<T> {
   let currentDelay = initialDelay;
   for (let i = 0; i < retries; i++) {
     try {
@@ -61,7 +61,7 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, retries = 6, initialDel
       if ((isQuotaError || isServerTransientError) && i < retries - 1) {
         console.warn(`API Error (${isQuotaError ? '429 Quota' : '5xx Server'}). Retrying in ${currentDelay}ms... (Attempt ${i + 1}/${retries})`);
         await delay(currentDelay);
-        currentDelay *= 2; // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+        currentDelay *= 2; // Exponential backoff: 2s, 4s, 8s, 16s...
       } else {
         // If it's not a quota error or we ran out of retries, throw it
         throw error;
